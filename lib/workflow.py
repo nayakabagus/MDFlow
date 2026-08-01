@@ -8,29 +8,16 @@ import shutil
 from pathlib import Path
 
 from config.simulation import SimulationConfig
-from lib.gromacs.prepare import (
-    editconf,
-    genion,
-    grompp,
-    pdb2gmx,
-    solvate,
-)
-from lib.gromacs.analysis import (
-    distance,
-    gyrate,
-    hbond,
-    rms,
-    rmsf,
-    sasa,
-    trjconv,
-)
+from lib.gromacs.analysis import distance, gyrate, hbond, rms, rmsf, sasa, trjconv
+from lib.gromacs.mmpbsa import run_mmpbsa
+from lib.gromacs.prepare import editconf, genion, grompp, pdb2gmx, solvate
 from lib.gromacs.simulation import mdrun
 from lib.layout import ProjectLayout
 from lib.logger import logger
+from lib.mmpbsa_input import MMPBSAInput
+from lib.resources import ResourceManager
 from lib.runner import CommandResult
 from lib.validation import validate_pdb_file
-from lib.gromacs.mmpbsa import run_mmpbsa
-from lib.mmpbsa_input import MMPBSAInput
 
 
 def _require_success(
@@ -198,6 +185,13 @@ def prepare_system(
 
     layout.create()
 
+    ResourceManager.install_templates(
+        layout,
+        config.forcefield,
+    )
+
+    config.template_dir = layout.md
+
     shutil.copy2(
         pdb_file,
         layout.input / "input.pdb",
@@ -291,6 +285,8 @@ def run_simulation(
     config = config or SimulationConfig()
 
     layout = ProjectLayout(Path(project_dir))
+
+    config.template_dir = layout.md
 
     _validate_prepared_project(layout)
 

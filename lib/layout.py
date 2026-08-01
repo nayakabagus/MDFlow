@@ -93,6 +93,26 @@ class ProjectLayout:
         return self.md / "topol.top"
 
     @property
+    def ions_mdp(self) -> Path:
+        return self.md / "ions.mdp"
+
+    @property
+    def em_mdp(self) -> Path:
+        return self.md / "em.mdp"
+
+    @property
+    def nvt_mdp(self) -> Path:
+        return self.md / "nvt.mdp"
+
+    @property
+    def npt_mdp(self) -> Path:
+        return self.md / "npt.mdp"
+
+    @property
+    def md_mdp(self) -> Path:
+        return self.md / "md.mdp"
+
+    @property
     def em_tpr(self) -> Path:
         return self.md / "em.tpr"
 

@@ -1,11 +1,5 @@
 from ._core import version
-from .prepare import (
-    pdb2gmx,
-    editconf,
-    solvate,
-    grompp,
-    genion,
-)
+from .prepare import editconf, genion, grompp, pdb2gmx, solvate
 from .simulation import mdrun
 
 __all__ = [

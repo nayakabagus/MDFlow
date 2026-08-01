@@ -6,8 +6,8 @@ Common filesystem utilities used throughout MDFlow.
 
 from __future__ import annotations
 
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 
 class FileSystem:
@@ -42,6 +42,11 @@ class FileSystem:
     def copy(src: str | Path, dst: str | Path) -> None:
         """Copy file."""
         shutil.copy2(src, dst)
+
+    @staticmethod
+    def copy_tree(src: str | Path, dst: str | Path) -> None:
+        """Copy an entire directory tree."""
+        shutil.copytree(src, dst, dirs_exist_ok=True)
 
     @staticmethod
     def move(src: str | Path, dst: str | Path) -> None:
