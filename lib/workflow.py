@@ -240,6 +240,7 @@ def prepare_system(
             topology=layout.topology,
             output_tpr=layout.ions_tpr,
             cwd=layout.md,
+            maxwarn=1,
         )
     )
 
