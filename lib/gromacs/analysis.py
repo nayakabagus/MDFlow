@@ -40,10 +40,10 @@ def rmsf(
     trajectory: Path,
     output: Path,
     cwd: Path | None = None,
-    group: str = "Backbone",
+    group: str = "C-alpha",
 ) -> CommandResult:
     """
-    Calculate RMSF.
+    Calculate per-residue RMSF using C-alpha atoms.
     """
 
     return run_gmx(
@@ -54,6 +54,7 @@ def rmsf(
         str(trajectory),
         "-o",
         str(output),
+        "-res",
         cwd=cwd,
         stdin=f"{group}\n",
     )
@@ -112,7 +113,7 @@ def trjconv(
     trajectory: Path,
     output: Path,
     cwd: Path | None = None,
-    selection: str = "System",
+    input_groups: list[str] | None = None,
     pbc: str | None = None,
     center: bool = False,
     fit: str | None = None,
@@ -140,10 +141,13 @@ def trjconv(
     if fit is not None:
         command.extend(["-fit", fit])
 
+    if input_groups is None:
+        input_groups = ["System"]
+
     return run_gmx(
         *command,
         cwd=cwd,
-        stdin=f"{selection}\n",
+        stdin="\n".join(input_groups) + "\n",
     )
 
 
@@ -154,12 +158,13 @@ def hbond(
     cwd: Path | None = None,
     donor_group: str = "Protein",
     acceptor_group: str = "Protein",
+    index: Path | None = None,
 ) -> CommandResult:
     """
-    Calculate hydrogen bonds.
+    Calculate hydrogen bonds between two selected groups.
     """
 
-    return run_gmx(
+    command = [
         "hbond",
         "-s",
         str(structure),
@@ -167,6 +172,18 @@ def hbond(
         str(trajectory),
         "-num",
         str(output),
+    ]
+
+    if index is not None:
+        command.extend(
+            [
+                "-n",
+                str(index),
+            ]
+        )
+
+    return run_gmx(
+        *command,
         cwd=cwd,
         stdin=f"{donor_group}\n{acceptor_group}\n",
     )
@@ -178,12 +195,13 @@ def distance(
     output: Path,
     selection: str,
     cwd: Path | None = None,
+    index: Path | None = None,
 ) -> CommandResult:
     """
     Calculate center-of-mass distance.
     """
 
-    return run_gmx(
+    command = [
         "distance",
         "-s",
         str(structure),
@@ -191,8 +209,25 @@ def distance(
         str(trajectory),
         "-oall",
         str(output),
-        "-select",
-        selection,
+    ]
+
+    if index is not None:
+        command.extend(
+            [
+                "-n",
+                str(index),
+            ]
+        )
+
+    command.extend(
+        [
+            "-select",
+            selection,
+        ]
+    )
+
+    return run_gmx(
+        *command,
         cwd=cwd,
     )
 

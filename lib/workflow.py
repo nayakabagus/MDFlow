@@ -8,9 +8,25 @@ import shutil
 from pathlib import Path
 
 from config.simulation import SimulationConfig
-from lib.gromacs.analysis import distance, gyrate, hbond, rms, rmsf, sasa, trjconv
+from lib.gromacs.analysis import (
+    distance,
+    energy,
+    gyrate,
+    hbond,
+    rms,
+    rmsf,
+    sasa,
+    trjconv,
+)
 from lib.gromacs.mmpbsa import run_mmpbsa
-from lib.gromacs.prepare import editconf, genion, grompp, pdb2gmx, solvate
+from lib.gromacs.prepare import (
+    editconf,
+    genion,
+    grompp,
+    pdb2gmx,
+    solvate,
+    write_index,
+)
 from lib.gromacs.simulation import mdrun
 from lib.layout import ProjectLayout
 from lib.logger import logger
@@ -99,7 +115,7 @@ def _validate_mmpbsa_project(
     required_files = [
         layout.md_tpr,
         layout.md_fit_xtc,
-        layout.topol_top,
+        layout.topology,
         layout.index_ndx,
     ]
 
@@ -341,6 +357,180 @@ def run_simulation(
     return layout.md_xtc
 
 
+def _count_topology_atoms(
+    topology_file: Path,
+) -> int:
+    """
+    Count atoms defined in a GROMACS topology include file.
+    """
+
+    text = topology_file.read_text(encoding="utf-8")
+
+    inside_atoms = False
+    count = 0
+
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        if stripped == "[ atoms ]":
+            inside_atoms = True
+            continue
+
+        if inside_atoms and stripped.startswith("["):
+            break
+
+        if inside_atoms:
+            if not stripped or stripped.startswith(";"):
+                continue
+
+            fields = stripped.split()
+
+            if fields and fields[0].isdigit():
+                count += 1
+
+    return count
+
+
+def _get_component_ranges(
+    layout: ProjectLayout,
+    config: SimulationConfig,
+) -> tuple[str, str]:
+    """
+    Determine global atom ranges for receptor and peptide components
+    using the molecule order defined in topol.top.
+    """
+
+    topology = layout.md / "topol.top"
+
+    if not topology.exists():
+        raise FileNotFoundError(f"Topology not found: {topology}")
+
+    receptor_ranges: list[str] = []
+    peptide_ranges: list[str] = []
+
+    current_atom = 1
+
+    inside_molecules = False
+
+    for line in topology.read_text(encoding="utf-8").splitlines():
+
+        stripped = line.strip()
+
+        if stripped == "[ molecules ]":
+            inside_molecules = True
+            continue
+
+        if not inside_molecules:
+            continue
+
+        if not stripped or stripped.startswith(";"):
+            continue
+
+        if stripped.startswith("["):
+            break
+
+        fields = stripped.split()
+
+        if len(fields) < 2:
+            continue
+
+        molecule_name = fields[0]
+
+        try:
+            molecule_count = int(fields[1])
+        except ValueError:
+            continue
+
+        if not molecule_name.startswith("Protein_chain_"):
+            continue
+
+        chain_id = molecule_name.removeprefix("Protein_chain_")
+
+        chain_file = layout.md / f"topol_Protein_chain_{chain_id}.itp"
+
+        if not chain_file.exists():
+            raise FileNotFoundError(f"Chain topology not found: {chain_file}")
+
+        atoms_per_molecule = _count_topology_atoms(chain_file)
+
+        total_atoms = atoms_per_molecule * molecule_count
+
+        start = current_atom
+        end = current_atom + total_atoms - 1
+
+        atom_range = f"{start}-{end}"
+
+        if chain_id in config.receptor_chains:
+            receptor_ranges.append(atom_range)
+
+        if chain_id in config.peptide_chains:
+            peptide_ranges.append(atom_range)
+
+        current_atom = end + 1
+
+    if not receptor_ranges:
+        raise ValueError("No receptor chains found in topol.top.")
+
+    if not peptide_ranges:
+        raise ValueError("No peptide chains found in topol.top.")
+
+    return (
+        " | ".join(receptor_ranges),
+        " | ".join(peptide_ranges),
+    )
+
+
+def create_index(
+    project_dir: str | Path,
+    config: SimulationConfig,
+) -> Path:
+    """
+    Create receptor, peptide, and complex index groups.
+    """
+
+    layout = ProjectLayout(Path(project_dir))
+
+    _validate_simulation_project(layout)
+
+    receptor_range, peptide_range = _get_component_ranges(
+        layout,
+        config,
+    )
+
+    def parse_ranges(
+        value: str,
+    ) -> list[tuple[int, int]]:
+        ranges: list[tuple[int, int]] = []
+
+        for part in value.split("|"):
+            start, end = part.strip().split("-")
+            ranges.append((int(start), int(end)))
+
+        return ranges
+
+    receptor_ranges = parse_ranges(
+        receptor_range,
+    )
+
+    peptide_ranges = parse_ranges(
+        peptide_range,
+    )
+
+    logger.info("Creating custom index...")
+
+    _require_success(
+        write_index(
+            output=layout.index_ndx,
+            receptor_ranges=receptor_ranges,
+            peptide_ranges=peptide_ranges,
+        )
+    )
+
+    logger.success("Custom index created.")
+
+    return layout.index_ndx
+
+
 def process_trajectory(
     project_dir: str | Path,
 ) -> Path:
@@ -369,6 +559,7 @@ def process_trajectory(
             structure=layout.md_tpr,
             trajectory=layout.md_xtc,
             output=layout.md_nopbc_xtc,
+            input_groups=["System"],
             pbc="mol",
             cwd=layout.md,
         )
@@ -379,6 +570,7 @@ def process_trajectory(
             structure=layout.md_tpr,
             trajectory=layout.md_nopbc_xtc,
             output=layout.md_nojump_xtc,
+            input_groups=["System"],
             pbc="nojump",
             cwd=layout.md,
         )
@@ -389,6 +581,7 @@ def process_trajectory(
             structure=layout.md_tpr,
             trajectory=layout.md_nojump_xtc,
             output=layout.md_center_xtc,
+            input_groups=["Protein", "System"],
             center=True,
             cwd=layout.md,
         )
@@ -399,6 +592,7 @@ def process_trajectory(
             structure=layout.md_tpr,
             trajectory=layout.md_center_xtc,
             output=layout.md_fit_xtc,
+            input_groups=["Backbone", "System"],
             fit="rot+trans",
             cwd=layout.md,
         )
@@ -411,14 +605,10 @@ def process_trajectory(
 
 def run_analysis(
     project_dir: str | Path,
+    config: SimulationConfig,
 ) -> None:
     """
     Run the default molecular dynamics analysis workflow.
-
-    Parameters
-    ----------
-    project_dir
-        MDFlow project directory.
     """
 
     layout = ProjectLayout(Path(project_dir))
@@ -426,6 +616,11 @@ def run_analysis(
     _validate_simulation_project(layout)
 
     logger.info("Running analysis...")
+
+    create_index(
+        project_dir,
+        config,
+    )
 
     _require_success(
         rms(
@@ -469,6 +664,9 @@ def run_analysis(
             trajectory=layout.md_fit_xtc,
             output=layout.hbond_xvg,
             cwd=layout.md,
+            donor_group="Receptor",
+            acceptor_group="Peptide",
+            index=layout.index_ndx,
         )
     )
 
@@ -477,7 +675,35 @@ def run_analysis(
             structure=layout.md_tpr,
             trajectory=layout.md_fit_xtc,
             output=layout.com_xvg,
-            selection='com of group "Protein" plus com of group "Protein"',
+            selection='com of group "Receptor" plus com of group "Peptide"',
+            cwd=layout.md,
+            index=layout.index_ndx,
+        )
+    )
+
+    _require_success(
+        energy(
+            energy_file=layout.md_edr,
+            output=layout.temperature_xvg,
+            terms=["Temperature"],
+            cwd=layout.md,
+        )
+    )
+
+    _require_success(
+        energy(
+            energy_file=layout.md_edr,
+            output=layout.pressure_xvg,
+            terms=["Pressure"],
+            cwd=layout.md,
+        )
+    )
+
+    _require_success(
+        energy(
+            energy_file=layout.md_edr,
+            output=layout.density_xvg,
+            terms=["Density"],
             cwd=layout.md,
         )
     )
@@ -523,7 +749,7 @@ def run_mmpbsa_workflow(
         run_mmpbsa(
             structure=layout.md_tpr,
             trajectory=layout.md_fit_xtc,
-            topology=layout.topol_top,
+            topology=layout.topology,
             index=layout.index_ndx,
             input_file=layout.mmpbsa_input,
             output=layout.mmpbsa_results,

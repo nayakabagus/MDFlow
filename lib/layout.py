@@ -156,6 +156,10 @@ class ProjectLayout:
     def md_xtc(self) -> Path:
         return self.md / "md.xtc"
 
+    @property
+    def md_edr(self) -> Path:
+        return self.md / "md.edr"
+
     def create(self) -> None:
         """
         Create all required directories.
@@ -194,6 +198,18 @@ class ProjectLayout:
         return self.trajectory / "md_fit.xtc"
 
     @property
+    def index_ndx(self) -> Path:
+        return self.md / "index.ndx"
+
+    @property
+    def mmpbsa_input(self) -> Path:
+        return self.mmpbsa / "mmpbsa.in"
+
+    @property
+    def mmpbsa_results(self) -> Path:
+        return self.mmpbsa / "FINAL_RESULTS_MMPBSA.dat"
+
+    @property
     def rmsd_xvg(self) -> Path:
         return self.rmsd / "rmsd.xvg"
 
@@ -218,5 +234,13 @@ class ProjectLayout:
         return self.com / "com_distance.xvg"
 
     @property
-    def energy_xvg(self) -> Path:
-        return self.system / "energy.xvg"
+    def temperature_xvg(self) -> Path:
+        return self.system / "temperature.xvg"
+
+    @property
+    def pressure_xvg(self) -> Path:
+        return self.system / "pressure.xvg"
+
+    @property
+    def density_xvg(self) -> Path:
+        return self.system / "density.xvg"

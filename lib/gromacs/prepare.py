@@ -162,3 +162,91 @@ def genion(
         cwd=cwd,
         stdin=f"{solvent_group}\n",
     )
+
+
+def make_ndx(
+    structure: Path,
+    output: Path,
+    commands: str,
+    cwd: Path | None = None,
+) -> CommandResult:
+    """
+    Create a custom GROMACS index file.
+    """
+
+    return run_gmx(
+        "make_ndx",
+        "-f",
+        str(structure),
+        "-o",
+        str(output),
+        cwd=cwd,
+        stdin=commands,
+    )
+
+
+def write_index(
+    output: Path,
+    receptor_ranges: list[tuple[int, int]],
+    peptide_ranges: list[tuple[int, int]],
+) -> CommandResult:
+    """
+    Write a GROMACS index file for receptor, peptide, and complex groups.
+    """
+
+    def _format_atoms(
+        ranges: list[tuple[int, int]],
+    ) -> str:
+        atoms: list[int] = []
+
+        for start, end in ranges:
+            atoms.extend(range(start, end + 1))
+
+        lines: list[str] = []
+
+        for i in range(0, len(atoms), 15):
+            lines.append(" ".join(str(atom) for atom in atoms[i : i + 15]))
+
+        return "\n".join(lines)
+
+    receptor_atoms = _format_atoms(receptor_ranges)
+    peptide_atoms = _format_atoms(peptide_ranges)
+
+    complex_ranges = [
+        (start, end)
+        for ranges in (
+            receptor_ranges,
+            peptide_ranges,
+        )
+        for start, end in ranges
+    ]
+
+    complex_atoms = _format_atoms(complex_ranges)
+
+    content = (
+        "[ Receptor ]\n"
+        f"{receptor_atoms}\n\n"
+        "[ Peptide ]\n"
+        f"{peptide_atoms}\n\n"
+        "[ Complex ]\n"
+        f"{complex_atoms}\n"
+    )
+
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output.write_text(
+        content,
+        encoding="utf-8",
+    )
+
+    return CommandResult(
+        command="write_index",
+        success=True,
+        return_code=0,
+        stdout="",
+        stderr="",
+        elapsed_time=0.0,
+    )

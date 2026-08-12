@@ -26,6 +26,10 @@ class SimulationConfig:
     positive_ion: str = "NA"
     negative_ion: str = "CL"
 
+    # Molecular component identification
+    receptor_chains: tuple[str, ...] = ("A",)
+    peptide_chains: tuple[str, ...] = ("B",)
+
     # File locations
     template_dir: Path = Path("templates")
 
