@@ -5,10 +5,13 @@ Tests for analysis workflow.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from typer.testing import CliRunner
+
 from config.simulation import SimulationConfig
 from lib.layout import ProjectLayout
 from lib.runner import CommandResult
 from lib.workflow import run_analysis
+from main import app
 
 
 def _success() -> CommandResult:
@@ -96,3 +99,31 @@ def test_run_analysis(
 
     assert mock_distance.called
     assert mock_energy.call_count == 3
+
+
+def test_analysis_run_command(tmp_path: Path) -> None:
+    """analysis run should process the trajectory and run analysis."""
+
+    runner = CliRunner()
+    project = tmp_path / "project"
+    project.mkdir()
+
+    with patch("cli.analysis.process_trajectory") as mock_process, patch(
+        "cli.analysis.run_analysis"
+    ) as mock_analysis:
+        result = runner.invoke(
+            app,
+            ["analysis", "run", str(project)],
+        )
+
+    assert result.exit_code == 0
+
+    mock_process.assert_called_once_with(project)
+
+    mock_analysis.assert_called_once()
+
+    analysis_project = mock_analysis.call_args.args[0]
+    config = mock_analysis.call_args.args[1]
+
+    assert analysis_project == project
+    assert isinstance(config, SimulationConfig)
